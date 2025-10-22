@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Clínyco — Estado & Chat</title>
+<style>
+  :root{ --azul-oscuro:#0e1e54; --fucsia:#e60e68; --azul-sec:#0071b8; --purpura:#6a2ca1; --teal:#008385; --burdeos:#942151; --texto:#ffffff; --linea:rgba(255,255,255,.08); }
+  *{box-sizing:border-box} html,body{height:100%}
+  body{ margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color: var(--texto); background: var(--azul-oscuro);
+    background-image: url('./logo_clinyco_bg.png'); background-size: cover; background-position:center; background-attachment:fixed; position:relative; }
+  body::before{ content:''; position:fixed; inset:0; background: linear-gradient(180deg, rgba(14,30,84,.85), rgba(14,30,84,.92)); z-index:0; }
+  .page{ position:relative; z-index:1; min-height:100%; display:flex; flex-direction:column; }
+  header{ padding:12px 16px; border-bottom:1px solid var(--linea); display:flex; justify-content:space-between; align-items:center; backdrop-filter: blur(4px); }
+  .brand{ font-weight:700; letter-spacing:.2px }
+  .btn{ border:1px solid var(--linea); background: rgba(255,255,255,.04); color:var(--texto); padding:8px 12px; border-radius:10px; cursor:pointer }
+  .btn.primary{ border-color: transparent; background: var(--fucsia); color:#fff }
+  .btn:hover{ filter:brightness(1.08) }
+  .wrap{ max-width:980px; width:100%; margin:0 auto; padding:16px; display:grid; gap:16px; flex:1 }
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px }
+  @media (max-width:900px){ .grid{ grid-template-columns:1fr } }
+  .card{ background: rgba(255,255,255,.04); border:1px solid var(--linea); border-radius:14px; padding:16px; box-shadow:0 6px 20px rgba(0,0,0,.2) }
+  h2{ margin:0 0 10px } h3{ margin:10px 0 8px; font-size:14px; color:#cbd5e1; letter-spacing:.2px }
+  .row{ display:flex; justify-content:space-between; align-items:center; gap:10px }
+  .list{ display:grid; gap:8px }
+  .stage{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px; border:1px dashed var(--linea); border-radius:10px; background: rgba(255,255,255,.02) }
+  .badge{ font-size:12px; border-radius:999px; padding:2px 8px; border:1px solid var(--linea) }
+  .ok{ color:#052e12; background:#bbf7d0; border-color:#86efac }
+  .pending{ color:#4a2a02; background:#fde68a; border-color:#fcd34d }
+  .tiny{ font-size:11px; color:#cbd5e1 }
+  input[type="text"]{ width:100%; padding:10px; border-radius:10px; border:1px solid var(--linea); background: rgba(255,255,255,.04); color: var(--texto) }
+  .chat{ height:360px; overflow:auto; border:1px solid var(--linea); border-radius:12px; padding:10px; background: rgba(255,255,255,.03) }
+  .msg{ margin:8px 0; max-width:80%; padding:8px 10px; border-radius:10px; border:1px solid var(--linea) }
+  .msg.me{ background: rgba(0,113,184,.15); border-color: rgba(0,113,184,.35) }
+  .msg.them{ background: rgba(230,14,104,.15); border-color: rgba(230,14,104,.35) }
+  .footer{ padding:12px 16px; border-top:1px solid var(--linea); text-align:center }
+  .accent-line{ height:3px; background: linear-gradient(90deg, var(--fucsia), var(--purpura), var(--azul-sec)); border-radius:3px }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="brand">Clínyco — Estado del Proceso</div>
+    <div class="row">
+      <button id="toggleMode" class="btn">Modo</button>
+      <button id="share" class="btn primary" title="Generar enlace para paciente">Generar enlace</button>
+    </div>
+  </header>
+  <div class="accent-line"></div>
+
+  <main class="wrap">
+    <div class="grid">
+      <section class="card">
+        <div class="row">
+          <h2>Etapas</h2>
+          <span class="tiny" id="modeLabel"></span>
+        </div>
+
+        <div id="editHelp" class="tiny" style="display:none;margin-bottom:8px">
+          Marca/desmarca y pulsa <b>Generar enlace</b>. El paciente verá solo lectura.
+        </div>
+
+        <h3>Pendientes</h3>
+        <div id="pending" class="list"></div>
+
+        <h3>Cumplidas</h3>
+        <div id="done" class="list"></div>
+      </section>
+
+      <section class="card">
+        <div class="row">
+          <h2>Chat</h2>
+          <div class="row">
+            <button id="clear" class="btn">Borrar</button>
+          </div>
+        </div>
+        <div id="chat" class="chat"></div>
+        <div class="row" style="margin-top:8px">
+          <input id="msg" type="text" placeholder="Escribe un mensaje…" />
+          <button id="send" class="btn">Enviar</button>
+        </div>
+        <div class="tiny">El chat se guarda localmente en este dispositivo, usando la llave del enlace.</div>
+      </section>
+    </div>
+
+    <section class="card tiny">
+      Llave de estado: <span id="key" style="font-family:monospace"></span>
+    </section>
+  </main>
+
+  <footer class="footer tiny">© Clínyco</footer>
+</div>
+
+<script>
+const STAGES = ['Evaluación con cirujano(a)','Evaluación con nutrióloga(o)','Evaluación con nutricionista','Evaluación psicológica','Exámenes de sangre','Endoscopia','Revisión de Test de Ureasa','Revisión de Biopsia (solo si se requiere)','Ecografía','Revisión de exámenes','Agendamiento de cirugía','Envío de indicaciones previas a la cirugía','Tips y acompañamiento en dieta pre cirugía (día a día desde el 7° al 5° día previo)','Confirmación de cirugía concretada','Alta médica'];
+
+const qs = new URLSearchParams(location.hash.slice(1));
+let doneSet = new Set(parseIds(qs.get('d')));
+let mode = (qs.get('mode') === 'edit') ? 'edit' : 'view';
+const KEY_PREFIX = "clinyco_simple_brand:v1";
+
+function parseIds(s){ return (s||"").split(',').map(n=>parseInt(n,10)).filter(Boolean); }
+function stateKey(){ const d=[...doneSet].sort((a,b)=>a-b).join(','); return KEY_PREFIX + ':' + (d || 'none'); }
+function saveLocal(){ localStorage.setItem(KEY_PREFIX + ':last', JSON.stringify({done:[...doneSet]})); }
+
+const elPending = document.getElementById('pending');
+const elDone = document.getElementById('done');
+const elMode = document.getElementById('modeLabel');
+const elToggle = document.getElementById('toggleMode');
+const elShare = document.getElementById('share');
+const elEditHelp = document.getElementById('editHelp');
+const elKey = document.getElementById('key');
+const elChat = document.getElementById('chat');
+const elMsg = document.getElementById('msg');
+const elSend = document.getElementById('send');
+const elClear = document.getElementById('clear');
+
+function render(){
+  elPending.innerHTML = '';
+  elDone.innerHTML = '';
+  const doneIds = new Set(doneSet);
+
+  STAGES.forEach((title, idx)=>{
+    const id = idx+1;
+    const isDone = doneIds.has(id);
+    const row = document.createElement('div'); row.className='stage';
+    const left = document.createElement('div');
+    left.innerHTML = '<div>'+title+'</div><div class="tiny">'+(isDone?'Cumplida':'Pendiente')+'</div>';
+    const right = document.createElement('div');
+    const badge = document.createElement('span'); badge.className='badge '+(isDone?'ok':'pending'); badge.textContent=isDone?'✔ Cumplida':'• Pendiente';
+    right.appendChild(badge);
+    if(mode==='edit'){
+      const chk=document.createElement('input'); chk.type='checkbox'; chk.checked=isDone;
+      chk.addEventListener('change', ()=>{ if(chk.checked) doneSet.add(id); else doneSet.delete(id); saveLocal(); render(); });
+      right.appendChild(chk);
+    }
+    row.append(left,right);
+    (isDone?elDone:elPending).appendChild(row);
+  });
+
+  elMode.textContent = (mode==='edit'?'Modo Edición':'Modo Cliente (solo lectura)');
+  elToggle.textContent = (mode==='edit'?'Ver como cliente':'Editar');
+  elEditHelp.style.display = (mode==='edit'?'block':'none');
+  elKey.textContent = stateKey();
+
+  renderChat();
+}
+
+function updateHash(){
+  const p = new URLSearchParams(location.hash.slice(1));
+  p.set('d', [...doneSet].sort((a,b)=>a-b).join(','));
+  p.set('mode', mode);
+  history.replaceState(null,'', '#'+p.toString());
+}
+
+// Chat local
+function loadChat(){ try{ return JSON.parse(localStorage.getItem(stateKey()+':chat')||'[]'); }catch{ return []; } }
+function saveChat(arr){ localStorage.setItem(stateKey()+':chat', JSON.stringify(arr)); }
+function esc(s){ return s.replace(/[&<>\"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;' }[c])); }
+function renderChat(){
+  elChat.innerHTML='';
+  loadChat().forEach(m=>{
+    const d=document.createElement('div'); d.className='msg '+(m.role==='clínica'?'me':'them');
+    d.innerHTML = '<div>'+esc(m.text)+'</div><div class="tiny">'+new Date(m.ts).toLocaleString()+' • '+m.role+'</div>';
+    elChat.appendChild(d);
+  });
+  elChat.scrollTop = elChat.scrollHeight;
+}
+function send(){
+  const text = (elMsg.value||'').trim(); if(!text) return;
+  const msgs = loadChat();
+  msgs.push({ text, ts: Date.now(), role: (mode==='edit'?'clínica':'paciente') });
+  saveChat(msgs); elMsg.value=''; renderChat();
+}
+
+// Eventos
+elToggle.addEventListener('click', ()=>{ mode = (mode==='edit'?'view':'edit'); updateHash(); render(); });
+elShare.addEventListener('click', ()=>{ updateHash(); navigator.clipboard?.writeText(location.href).catch(()=>{}); alert("Enlace generado (copiado si el navegador lo permite):\n\n"+location.href); });
+elSend.addEventListener('click', send);
+elMsg.addEventListener('keydown', e=>{ if(e.key==='Enter') send(); });
+elClear.addEventListener('click', ()=>{ if(confirm('¿Borrar chat local de este estado?')){ localStorage.removeItem(stateKey()+':chat'); renderChat(); }});
+window.addEventListener('hashchange', ()=>{ const p=new URLSearchParams(location.hash.slice(1)); doneSet=new Set((p.get('d')||'').split(',').map(n=>parseInt(n,10)).filter(Boolean)); mode=(p.get('mode')==='edit'?'edit':'view'); render(); });
+
+// Boot
+if(!qs.get('d')){ try{ const last = JSON.parse(localStorage.getItem(KEY_PREFIX+':last')||'null'); if(last?.done?.length) doneSet = new Set(last.done); }catch{} updateHash(); }
+render();
+</script>
+</body>
+</html>
