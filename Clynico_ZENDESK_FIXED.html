@@ -264,6 +264,88 @@ window.addEventListener('hashchange', ()=>{
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js");
 }
+<script>
+/* === CONFIG === */
+const LOCK_URL = 'PEGAR_AQUI_URL_WEBAPP_LOCK/exec'; // tu Apps Script del lock
+const params = new URL(location.href).searchParams;
+const ZID  = params.get('zid') || '';
+const MODE = params.get('mode') || 'view';
+const IS_EDIT = MODE === 'edit';
+
+/* === UI helpers: des/activar edición === */
+function setEditEnabled(enabled, note){
+  // deshabilita/activa los checkboxes u otros controles de edición
+  document.querySelectorAll('.stage input[type="checkbox"]').forEach(chk=> chk.disabled = !enabled);
+  // botón de subir archivos (si ya lo tienes)
+  const up = document.getElementById('uploadBtn');
+  if (up) up.style.display = enabled ? 'inline-block' : 'none';
+
+  let banner = document.getElementById('edit-lock-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'edit-lock-banner';
+    banner.style.cssText = 'position:sticky;top:0;z-index:50;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.2);font-size:14px;background:#0e1e54;color:#fff';
+    document.body.prepend(banner);
+  }
+  banner.textContent = note || (enabled ? 'Modo edición activo' : 'Solo lectura');
+}
+
+/* === Lock cycle === */
+let lockInterval = null;
+
+async function lockStatus(){
+  const r = await fetch(`${LOCK_URL}?zid=${encodeURIComponent(ZID)}`, { method:'GET' });
+  const j = await r.json().catch(()=>({ok:false}));
+  return j.ok ? (j.editor || null) : null;
+}
+
+async function acquireLock(){
+  const r = await fetch(LOCK_URL, {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({ action:'lock', zid: ZID })
+  });
+  const j = await r.json().catch(()=>({ok:false}));
+  return j;
+}
+
+async function touchLock(){
+  await fetch(LOCK_URL, {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({ action:'touch', zid: ZID })
+  }).catch(()=>{});
+}
+
+async function releaseLock(){
+  await fetch(LOCK_URL, {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({ action:'unlock', zid: ZID })
+  }).catch(()=>{});
+}
+
+async function startEditIfPossible(){
+  if (!IS_EDIT || !ZID) { setEditEnabled(false, 'Solo lectura'); return; }
+
+  // Intentar tomar lock
+  const res = await acquireLock();
+  if (res.ok && res.locked) {
+    setEditEnabled(true, `Modo edición activo — Editor: ${res.editor}`);
+    // mantén vivo el lock
+    lockInterval = setInterval(touchLock, 60*1000); // cada 1 min
+    // liberar al cerrar/navegar
+    window.addEventListener('beforeunload', releaseLock);
+  } else {
+    // otro editor tiene el lock
+    const editor = (res && res.editor) ? res.editor : (await lockStatus());
+    setEditEnabled(false, editor ? `Solo lectura — Editor activo: ${editor}` : 'Solo lectura');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', startEditIfPossible);
+</script>
+
 </script>
 </body>
 </html>
