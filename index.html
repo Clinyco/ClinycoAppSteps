@@ -270,6 +270,108 @@ window.addEventListener('hashchange', ()=>{
   }
   render();
 })();
+  <script>
+/* === CONFIG === */
+const CHAT_GET_URL = 'https://TU_APPS_SCRIPT_PUBLIC/exec'; // GET ?zid=...
+const POLL_MS = 3000; // 3s
+const IS_AGENT_MODE = new URL(location).searchParams.get('mode') === 'edit';
+const ZID = new URL(location).searchParams.get('zid') || '';
+
+/* === Estado === */
+let lastSeenTs = 0; // timestamp del último mensaje visto (ms)
+let unread = 0;
+
+/* === Sonido === */
+const ding = new Audio('data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAA...'); // sonido embebido corto
+ding.preload = 'auto';
+
+/* === Notificaciones de escritorio === */
+async function ensureNotifPermission(){
+  if (Notification && Notification.permission === 'default') {
+    try { await Notification.requestPermission(); } catch(e){}
+  }
+}
+function notifyDesktop(text){
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  new Notification('Nuevo mensaje del paciente', { body: text.slice(0, 120) });
+}
+
+/* === Título con badge === */
+const baseTitle = document.title;
+function setBadge(n){
+  document.title = n > 0 ? `(${n}) ${baseTitle}` : baseTitle;
+}
+
+/* === Render de chat existente === */
+function renderMessages(arr){
+  const box = document.getElementById('chat');
+  if (!box) return;
+  box.innerHTML = '';
+  arr.forEach(m=>{
+    const div = document.createElement('div');
+    div.className = 'msg ' + (m.role==='agent'?'me':'them');
+    const when = new Date(m.ts).toLocaleString();
+    div.innerHTML = `<div>${escapeHtml(m.text||'')}</div><div class="tiny">${when} • ${m.role}</div>`;
+    box.appendChild(div);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+function escapeHtml(s){return (s||'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+/* === Polling === */
+async function fetchChat(){
+  if(!ZID) return;
+  const url = `${CHAT_GET_URL}?zid=${encodeURIComponent(ZID)}&_=${Date.now()}`;
+  const r = await fetch(url, { headers: { 'Cache-Control':'no-cache' }});
+  const j = await r.json().catch(()=>({ok:false}));
+  if (!j.ok || !Array.isArray(j.messages)) return;
+
+  // detectar nuevos del paciente
+  let newestTs = lastSeenTs;
+  const newPatientMsgs = [];
+  j.messages.forEach(m=>{
+    const t = +new Date(m.ts || Date.now());
+    if (t > lastSeenTs && m.role === 'patient') {
+      newPatientMsgs.push(m);
+    }
+    if (t > newestTs) newestTs = t;
+  });
+
+  // render
+  renderMessages(j.messages);
+
+  // alertas
+  if (IS_AGENT_MODE && newPatientMsgs.length) {
+    unread += newPatientMsgs.length;
+    setBadge(unread);
+    try { ding.currentTime = 0; ding.play(); } catch(e){}
+    notifyDesktop(newPatientMsgs[newPatientMsgs.length-1].text || 'Nuevo mensaje');
+  }
+  lastSeenTs = newestTs;
+}
+
+/* === Reset de contador cuando el agente escribe o enfoca === */
+function resetUnread(){ unread = 0; setBadge(0); }
+window.addEventListener('focus', resetUnread);
+document.getElementById('send')?.addEventListener('click', resetUnread);
+
+/* === Arranque === */
+(async function initAgentConsole(){
+  if (!IS_AGENT_MODE) return; // solo agentes
+  await ensureNotifPermission();
+  // primer fetch fija el lastSeenTs sin notificar históricos
+  const url = `${CHAT_GET_URL}?zid=${encodeURIComponent(ZID)}&_=${Date.now()}`;
+  const r = await fetch(url); const j = await r.json().catch(()=>({messages:[]}));
+  const msgs = j.messages || [];
+  if (msgs.length){
+    lastSeenTs = +new Date(msgs[msgs.length-1].ts || Date.now());
+    renderMessages(msgs);
+  }
+  setInterval(fetchChat, POLL_MS);
+})();
+</script>
+
 </script>
 </body>
 </html>
