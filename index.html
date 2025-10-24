@@ -45,6 +45,27 @@
 </style>
 </head>
 <script>
+  // Modo seguro: si ?safe=1, no ejecutes integraciones potencialmente problemáticas
+  const qs = new URL(location.href).searchParams;
+  const SAFE_MODE = qs.get('safe') === '1';
+
+  // Defensas para que nunca se caiga el render de etapas
+  function safe(fn){ try { fn(); } catch(e){ console.error('[SAFE]', e); } }
+
+  // Ejemplo: si tienes código del lock de editor o upload por etapa, envuélvelo:
+  if (!SAFE_MODE) {
+    safe(()=>{ /* aquí va tu init del lock (acquireLock, touch, etc.) */ });
+    safe(()=>{ /* aquí va tu init de upload por etapa */ });
+  }
+
+  // Garantiza que las etapas se muestren aunque falle algo
+  safe(()=>{
+    const stagesCard = document.getElementById('stages-card') || document.querySelector('.card.stages');
+    if (stagesCard) stagesCard.style.visibility = 'visible';
+  });
+</script>
+
+<script>
 if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js"); }
 </script>
 <body>
